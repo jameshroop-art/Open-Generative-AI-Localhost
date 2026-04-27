@@ -1,12 +1,13 @@
 import { cookies } from "next/headers";
 import AgentEditClient from "./AgentEditClient";
 
-const BASE_URL = 'https://api.muapi.ai';
+// Server-side fetches use the local proxy routes — no direct external calls.
+const LOCAL_BASE = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
 
 async function fetchUserData(apiKey) {
   if (!apiKey) return null;
   try {
-    const res = await fetch(`${BASE_URL}/api/v1/account/balance`, {
+    const res = await fetch(`${LOCAL_BASE}/api/api/v1/account/balance`, {
       cache: "no-store",
       headers: { "x-api-key": apiKey },
     });

@@ -16,7 +16,7 @@ async function proxy(request, params, method) {
     try {
         const opts = {
             method,
-            headers: { 'content-type': 'application/json' },
+            headers: { 'content-type': request.headers.get('content-type') || 'application/json' },
         };
         if (method !== 'GET' && method !== 'HEAD') {
             opts.body = await request.arrayBuffer();

@@ -28,10 +28,17 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 app = Flask(__name__)
-CORS(app)
+# Restrict CORS to localhost origins — this server is only ever called from the
+# local Next.js proxy, never from remote websites.
+CORS(app, resources={r'/*': {'origins': [
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:5173',
+]}})
 
 # ── Lazy-loaded model caches ──────────────────────────────────────────────────
-_esrgan_model = None
+_esrgan_models = {}   # model_name → RealESRGANer instance
 _gfpgan_model = None
 
 
@@ -90,7 +97,7 @@ def esrgan_upscale():
     if not os.path.exists(model_path):
         return jsonify({"error": f"Model not found: {model_path}"}), 404
 
-    if _esrgan_model is None or getattr(_esrgan_model, "_model_name", None) != model_name:
+    if model_name not in _esrgan_models:
         net = RRDBNet(
             num_in_ch=3,
             num_out_ch=3,
@@ -99,7 +106,7 @@ def esrgan_upscale():
             num_grow_ch=32,
             scale=scale,
         )
-        _esrgan_model = RealESRGANer(
+        _esrgan_models[model_name] = RealESRGANer(
             scale=scale,
             model_path=model_path,
             model=net,
@@ -108,14 +115,13 @@ def esrgan_upscale():
             pre_pad=0,
             half=False,
         )
-        _esrgan_model._model_name = model_name
 
     import numpy as np
     from PIL import Image
 
     img = _decode_image(body["image"])
     img_array = np.array(img.convert("RGB"))
-    output, _ = _esrgan_model.enhance(img_array, outscale=scale)
+    output, _ = _esrgan_models[model_name].enhance(img_array, outscale=scale)
     return jsonify({"image": _encode_image(Image.fromarray(output))})
 
 
