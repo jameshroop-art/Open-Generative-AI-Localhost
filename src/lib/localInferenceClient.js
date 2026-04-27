@@ -19,6 +19,24 @@ class LocalInferenceClient {
         return window.localAI.listModels();
     }
 
+    /**
+     * List all available local LoRA files from the on-disk lora/ directory.
+     * Falls back to fetching /api/loras when not running in Electron.
+     * @returns {Promise<{loras: Array, loraDir?: string}>}
+     */
+    async listLoras() {
+        if (isLocalAIAvailable()) {
+            return window.localAI.listLoras();
+        }
+        // Browser / Next.js dev mode — fetch from the API route
+        try {
+            const res = await fetch('/api/loras');
+            return await res.json();
+        } catch {
+            return { loras: [] };
+        }
+    }
+
     async downloadModel(modelId) {
         if (!isLocalAIAvailable()) throw new Error('Local AI only available in the desktop app.');
         return window.localAI.downloadModel(modelId);

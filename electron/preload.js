@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('localAI', {
 
     // Model management
     listModels: () => ipcRenderer.invoke('local-ai:list-models'),
+    listLoras: () => ipcRenderer.invoke('local-ai:list-loras'),
     downloadModel: (modelId) => ipcRenderer.invoke('local-ai:download-model', modelId),
     downloadAuxiliary: (auxKey) => ipcRenderer.invoke('local-ai:download-auxiliary', auxKey),
     deleteModel: (modelId) => ipcRenderer.invoke('local-ai:delete-model', modelId),

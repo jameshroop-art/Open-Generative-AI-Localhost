@@ -68,6 +68,9 @@ export async function generateImage(apiKey, params) {
         payload.image_url = null;
     }
     if (params.seed && params.seed !== -1) payload.seed = params.seed;
+    // LoRA
+    if (params.lora_models) payload.lora_models = params.lora_models;
+    else if (params.lora) payload.lora_models = [{ id: params.lora, weight: params.loraWeight ?? 1.0 }];
     return submitAndPoll(endpoint, payload, apiKey, params.onRequestId, 60);
 }
 
@@ -85,6 +88,9 @@ export async function generateI2I(apiKey, params) {
     if (params.aspect_ratio) payload.aspect_ratio = params.aspect_ratio;
     if (params.resolution) payload.resolution = params.resolution;
     if (params.quality) payload.quality = params.quality;
+    // LoRA
+    if (params.lora_models) payload.lora_models = params.lora_models;
+    else if (params.lora) payload.lora_models = [{ id: params.lora, weight: params.loraWeight ?? 1.0 }];
     return submitAndPoll(endpoint, payload, apiKey, params.onRequestId, 60);
 }
 
@@ -99,6 +105,9 @@ export async function generateVideo(apiKey, params) {
     if (params.quality) payload.quality = params.quality;
     if (params.mode) payload.mode = params.mode;
     if (params.image_url) payload.image_url = params.image_url;
+    // LoRA / motion LoRA
+    if (params.lora_models) payload.lora_models = params.lora_models;
+    else if (params.lora) payload.lora_models = [{ id: params.lora, weight: params.loraWeight ?? 1.0 }];
     return submitAndPoll(endpoint, payload, apiKey, params.onRequestId, 900);
 }
 
@@ -117,6 +126,9 @@ export async function generateI2V(apiKey, params) {
     if (params.resolution) payload.resolution = params.resolution;
     if (params.quality) payload.quality = params.quality;
     if (params.mode) payload.mode = params.mode;
+    // LoRA / motion LoRA
+    if (params.lora_models) payload.lora_models = params.lora_models;
+    else if (params.lora) payload.lora_models = [{ id: params.lora, weight: params.loraWeight ?? 1.0 }];
     return submitAndPoll(endpoint, payload, apiKey, params.onRequestId, 900);
 }
 

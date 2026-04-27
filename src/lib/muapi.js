@@ -65,6 +65,15 @@ export class MuapiClient {
             finalPayload.seed = params.seed;
         }
 
+        // LoRA (cloud: Civitai ID string or array; local: absolute path passed through)
+        if (params.lora_models) {
+            finalPayload.lora_models = params.lora_models;
+        } else if (params.lora) {
+            // Convert a single filename/path into a Civitai-style entry if it looks like one,
+            // otherwise pass it verbatim so server-side logic can handle it.
+            finalPayload.lora_models = [{ id: params.lora, weight: params.loraWeight ?? 1.0 }];
+        }
+
         console.log('[Muapi] Requesting:', url);
         console.log('[Muapi] Payload:', finalPayload);
 
@@ -186,6 +195,13 @@ export class MuapiClient {
         if (params.mode) finalPayload.mode = params.mode;
         if (params.image_url) finalPayload.image_url = params.image_url;
 
+        // LoRA for video models (motion LoRAs)
+        if (params.lora_models) {
+            finalPayload.lora_models = params.lora_models;
+        } else if (params.lora) {
+            finalPayload.lora_models = [{ id: params.lora, weight: params.loraWeight ?? 1.0 }];
+        }
+
         console.log('[Muapi] Video Request:', url);
         console.log('[Muapi] Video Payload:', finalPayload);
 
@@ -262,6 +278,13 @@ export class MuapiClient {
         if (params.resolution) finalPayload.resolution = params.resolution;
         if (params.quality) finalPayload.quality = params.quality;
 
+        // LoRA for I2I
+        if (params.lora_models) {
+            finalPayload.lora_models = params.lora_models;
+        } else if (params.lora) {
+            finalPayload.lora_models = [{ id: params.lora, weight: params.loraWeight ?? 1.0 }];
+        }
+
         console.log('[Muapi] I2I Request:', url);
         console.log('[Muapi] I2I Payload:', finalPayload);
 
@@ -332,6 +355,13 @@ export class MuapiClient {
         if (params.quality) finalPayload.quality = params.quality;
         if (params.mode) finalPayload.mode = params.mode;
         if (params.name) finalPayload.name = params.name;
+
+        // LoRA for I2V (motion LoRAs)
+        if (params.lora_models) {
+            finalPayload.lora_models = params.lora_models;
+        } else if (params.lora) {
+            finalPayload.lora_models = [{ id: params.lora, weight: params.loraWeight ?? 1.0 }];
+        }
 
         console.log('[Muapi] I2V Request:', url);
         console.log('[Muapi] I2V Payload:', finalPayload);

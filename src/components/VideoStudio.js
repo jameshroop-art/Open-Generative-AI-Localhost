@@ -3,6 +3,7 @@ import { t2vModels, getAspectRatiosForVideoModel, getDurationsForModel, getResol
 import { AuthModal } from './AuthModal.js';
 import { createUploadPicker } from './UploadPicker.js';
 import { savePendingJob, removePendingJob, getPendingJobs } from '../lib/pendingJobs.js';
+import { localAI } from '../lib/localInferenceClient.js';
 
 export function VideoStudio() {
     const container = document.createElement('div');
@@ -25,6 +26,8 @@ export function VideoStudio() {
     let imageMode = false; // false = t2v models, true = i2v models
     let v2vMode = false;   // true = video-to-video tools mode
     let uploadedVideoUrl = null;
+    let selectedLora = '';
+    let loraWeight = 1.0;
 
     const getCurrentModels = () => v2vMode ? v2vModels : (imageMode ? i2vModels : t2vModels);
     const getCurrentAspectRatios = (id) => imageMode ? getAspectRatiosForI2VModel(id) : getAspectRatiosForVideoModel(id);
@@ -332,6 +335,87 @@ export function VideoStudio() {
     bar.appendChild(bottomRow);
     promptWrapper.appendChild(bar);
     container.appendChild(promptWrapper);
+
+    // ==========================================
+    // 2b. VIDEO ADVANCED PANEL (LoRA picker)
+    // ==========================================
+    let showVideoAdvanced = false;
+    const videoAdvancedPanel = document.createElement('div');
+    videoAdvancedPanel.className = 'w-full max-w-4xl mt-6 animate-fade-in-up hidden';
+    videoAdvancedPanel.id = 'video-advanced-panel';
+    videoAdvancedPanel.innerHTML = `
+        <div class="bg-[#111]/90 backdrop-blur-xl border border-white/10 rounded-2xl p-5 flex flex-col gap-4">
+            <div class="flex items-center justify-between pb-3 border-b border-white/5">
+                <h3 class="text-sm font-bold text-white">Advanced Options</h3>
+                <button id="close-video-adv-btn" class="text-white/40 hover:text-white transition-colors">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <!-- LoRA / Motion LoRA -->
+            <div class="flex flex-col gap-2">
+                <label class="text-xs font-bold text-secondary uppercase tracking-wider">LoRA / Motion LoRA (Optional)</label>
+                <div class="relative">
+                    <select id="v-lora-select"
+                        class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-primary/50 transition-colors appearance-none cursor-pointer">
+                        <option value="">— None —</option>
+                    </select>
+                    <div class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-white/40">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2 mt-1">
+                    <label class="text-xs font-bold text-secondary">LoRA Weight:</label>
+                    <input type="number" id="v-lora-weight-input"
+                        value="1.0" min="0" max="4" step="0.1"
+                        class="w-20 bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-white text-sm focus:outline-none focus:border-primary/50 transition-colors">
+                </div>
+                <p class="text-xs text-muted">Select a local motion LoRA from the <code>lora/motion_loras/</code> or <code>lora/flux/</code> directory</p>
+            </div>
+        </div>
+    `;
+    container.appendChild(videoAdvancedPanel);
+
+    // Populate video LoRA select
+    const vLoraSelect = videoAdvancedPanel.querySelector('#v-lora-select');
+    localAI.listLoras().then(({ loras = [] }) => {
+        if (!loras.length || !vLoraSelect) return;
+        const groups = {};
+        loras.forEach(l => {
+            const g = l.label || l.subfolder || 'General';
+            if (!groups[g]) groups[g] = [];
+            groups[g].push(l);
+        });
+        Object.entries(groups).forEach(([groupLabel, items]) => {
+            const optgroup = document.createElement('optgroup');
+            optgroup.label = groupLabel;
+            items.forEach(l => {
+                const opt = document.createElement('option');
+                opt.value = l.relative;
+                opt.textContent = l.name;
+                opt.dataset.absPath = l.absPath || '';
+                optgroup.appendChild(opt);
+            });
+            vLoraSelect.appendChild(optgroup);
+        });
+    }).catch(() => {});
+
+    if (vLoraSelect) {
+        vLoraSelect.onchange = (e) => { selectedLora = e.target.value; };
+    }
+
+    const vLoraWeightInput = videoAdvancedPanel.querySelector('#v-lora-weight-input');
+    if (vLoraWeightInput) {
+        vLoraWeightInput.oninput = (e) => { loraWeight = parseFloat(e.target.value) || 1.0; };
+    }
+
+    const toggleVideoAdvanced = () => {
+        showVideoAdvanced = !showVideoAdvanced;
+        videoAdvancedPanel.classList.toggle('hidden', !showVideoAdvanced);
+        document.getElementById('v-advanced-btn-label').textContent = showVideoAdvanced ? 'Less' : 'Advanced';
+    };
+    advancedBtn.onclick = toggleVideoAdvanced;
+    const closeVideoAdvBtn = videoAdvancedPanel.querySelector('#close-video-adv-btn');
+    if (closeVideoAdvBtn) closeVideoAdvBtn.onclick = toggleVideoAdvanced;
 
     // ==========================================
     // 3. DROPDOWNS
@@ -1033,6 +1117,7 @@ export function VideoStudio() {
                 if (selectedQuality) i2vParams.quality = selectedQuality;
                 if (selectedMode) i2vParams.mode = selectedMode;
                 if (selectedEffectName) i2vParams.name = selectedEffectName;
+                if (selectedLora) { i2vParams.lora = selectedLora; i2vParams.loraWeight = loraWeight; }
 
                 const res = await muapi.generateI2V(i2vParams);
                 console.log('[VideoStudio] I2V response:', res);
@@ -1076,6 +1161,7 @@ export function VideoStudio() {
 
             if (selectedQuality) params.quality = selectedQuality;
             if (selectedMode) params.mode = selectedMode;
+            if (selectedLora) { params.lora = selectedLora; params.loraWeight = loraWeight; }
 
             const res = await muapi.generateVideo(params);
 

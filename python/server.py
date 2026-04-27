@@ -293,6 +293,24 @@ def diffusers_generate():
     pipe = DiffusionPipeline.from_pretrained(model_path, torch_dtype=dtype)
     pipe = pipe.to(device)
 
+    # ── LoRA support ──────────────────────────────────────────────────────────
+    lora_path = body.get("lora_path")
+    lora_weight = float(body.get("lora_weight", 1.0))
+    if lora_path:
+        if os.path.isfile(lora_path):
+            log.info("Loading LoRA weights from %s (weight=%.2f)", lora_path, lora_weight)
+            try:
+                pipe.load_lora_weights(
+                    os.path.dirname(lora_path),
+                    weight_name=os.path.basename(lora_path),
+                    adapter_name="custom",
+                )
+                pipe.set_adapters(["custom"], adapter_weights=[lora_weight])
+            except Exception as exc:
+                log.warning("Failed to load LoRA weights: %s", exc)
+        else:
+            log.warning("LoRA file not found, skipping: %s", lora_path)
+
     generator = torch.Generator(device=device)
     if body.get("seed") is not None:
         generator.manual_seed(int(body["seed"]))
