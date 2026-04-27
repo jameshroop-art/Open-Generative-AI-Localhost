@@ -6,8 +6,10 @@ Provides HTTP endpoints for Python-only AI features:
   POST /gfpgan/restore          — GFPGAN face restoration
   POST /insightface/swap        — InsightFace face swap
   POST /diffusers/generate      — HuggingFace Diffusers image generation
+  POST /cogvideox/generate      — CogVideoX local video generation (T2V + I2V)
 
 All image endpoints accept and return base64-encoded PNG data via JSON.
+The /cogvideox/generate endpoint returns base64-encoded MP4 video.
 The server starts on 127.0.0.1 only and is never exposed to the network.
 """
 
@@ -326,6 +328,135 @@ def diffusers_generate():
     )
 
     return jsonify({"image": _encode_image(result.images[0])})
+
+
+# ── CogVideoX video generation ────────────────────────────────────────────────
+@app.post("/cogvideox/generate")
+def cogvideox_generate():
+    """Generate a video using a local CogVideoX model.
+
+    Request JSON:
+      model_path       str    absolute path to local CogVideoX model directory (required)
+      prompt           str    text prompt (required)
+      image            str    base64-encoded input image for image-to-video (optional)
+      num_frames       int    number of frames to generate (default 49 ≈ 6 s @ 8 fps)
+      guidance_scale   float  classifier-free guidance scale (default 6.0)
+      steps            int    inference steps (default 50)
+      seed             int    RNG seed (optional)
+      lora_path        str    absolute path to a LoRA .safetensors file (optional)
+      lora_weight      float  LoRA adapter weight 0-1 (default 1.0)
+      fps              int    frames-per-second for the output MP4 (default 8)
+    Response JSON:
+      video  str  base64-encoded MP4 video
+    """
+    try:
+        import torch
+        from diffusers import CogVideoXPipeline, CogVideoXImageToVideoPipeline
+        from diffusers.utils import export_to_video
+    except ImportError as exc:
+        return jsonify({"error": f"torch/diffusers not installed: {exc}"}), 503
+
+    body = request.get_json(force=True)
+    if not body:
+        return jsonify({"error": "JSON body required"}), 400
+
+    model_path = body.get("model_path")
+    if not model_path:
+        # Try the environment default, then fall back to CogVideoX/ next to repo root
+        model_path = os.environ.get(
+            "COGVIDEOX_MODEL_PATH",
+            os.path.join(os.path.dirname(__file__), "..", "CogVideoX", "CogVideoX-5b"),
+        )
+    if not os.path.isdir(model_path):
+        return jsonify({"error": f"model_path must point to a local CogVideoX directory: {model_path}"}), 400
+
+    prompt = body.get("prompt", "")
+    num_frames = int(body.get("num_frames", 49))
+    guidance_scale = float(body.get("guidance_scale", 6.0))
+    steps = int(body.get("steps", 50))
+    fps = int(body.get("fps", 8))
+
+    if torch.cuda.is_available():
+        device, dtype = "cuda", torch.bfloat16
+    elif getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+        device, dtype = "mps", torch.float16
+    else:
+        device, dtype = "cpu", torch.float32
+
+    # Choose pipeline based on whether an input image was supplied
+    image_b64 = body.get("image")
+    if image_b64:
+        log.info("CogVideoX: loading I2V pipeline from %s", model_path)
+        pipe = CogVideoXImageToVideoPipeline.from_pretrained(model_path, torch_dtype=dtype)
+    else:
+        log.info("CogVideoX: loading T2V pipeline from %s", model_path)
+        pipe = CogVideoXPipeline.from_pretrained(model_path, torch_dtype=dtype)
+
+    pipe = pipe.to(device)
+
+    # Optional LoRA
+    lora_path = body.get("lora_path")
+    lora_weight = float(body.get("lora_weight", 1.0))
+    if lora_path:
+        if os.path.isfile(lora_path):
+            log.info("CogVideoX: loading LoRA from %s (weight=%.2f)", lora_path, lora_weight)
+            try:
+                pipe.load_lora_weights(
+                    os.path.dirname(lora_path),
+                    weight_name=os.path.basename(lora_path),
+                    adapter_name="custom",
+                )
+                pipe.set_adapters(["custom"], adapter_weights=[lora_weight])
+            except Exception as exc:
+                log.warning("CogVideoX: failed to load LoRA weights: %s", exc)
+        else:
+            log.warning("CogVideoX: LoRA file not found, skipping: %s", lora_path)
+
+    generator = torch.Generator(device=device)
+    if body.get("seed") is not None:
+        generator.manual_seed(int(body["seed"]))
+
+    try:
+        if image_b64:
+            from PIL import Image as PilImage
+            img = _decode_image(image_b64).convert("RGB")
+            # CogVideoX I2V expects 480×720 (height×width) by default; resize if needed
+            img = img.resize((720, 480))
+            video_frames = pipe(
+                prompt=prompt,
+                image=img,
+                num_frames=num_frames,
+                guidance_scale=guidance_scale,
+                num_inference_steps=steps,
+                generator=generator,
+            ).frames[0]
+        else:
+            video_frames = pipe(
+                prompt=prompt,
+                num_frames=num_frames,
+                guidance_scale=guidance_scale,
+                num_inference_steps=steps,
+                generator=generator,
+            ).frames[0]
+    except Exception as exc:
+        log.error("CogVideoX generation failed: %s", exc)
+        return jsonify({"error": f"CogVideoX generation failed: {exc}"}), 500
+
+    # Export frames to MP4 in a temp file, then return base64
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+        tmp_path = tmp.name
+    try:
+        export_to_video(video_frames, tmp_path, fps=fps)
+        with open(tmp_path, "rb") as fh:
+            video_b64 = base64.b64encode(fh.read()).decode()
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+    return jsonify({"video": video_b64})
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
