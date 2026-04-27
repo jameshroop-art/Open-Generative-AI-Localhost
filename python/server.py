@@ -74,7 +74,7 @@ def esrgan_upscale():
     Response JSON:
       image   str   base64-encoded upscaled PNG
     """
-    global _esrgan_model
+    global _esrgan_models
     try:
         from basicsr.archs.rrdbnet_arch import RRDBNet
         from realesrgan import RealESRGANer
