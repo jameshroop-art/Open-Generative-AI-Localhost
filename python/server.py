@@ -42,6 +42,7 @@ CORS(app, resources={r'/*': {'origins': [
 # ── Lazy-loaded model caches ──────────────────────────────────────────────────
 _esrgan_models = {}   # model_name → RealESRGANer instance
 _gfpgan_model = None
+_cogvideox_pipes = {}  # (model_path, is_i2v) → loaded pipeline instance
 
 
 def _decode_image(b64_string):
@@ -349,6 +350,7 @@ def cogvideox_generate():
     Response JSON:
       video  str  base64-encoded MP4 video
     """
+    global _cogvideox_pipes
     try:
         import torch
         from diffusers import CogVideoXPipeline, CogVideoXImageToVideoPipeline
@@ -383,16 +385,24 @@ def cogvideox_generate():
     else:
         device, dtype = "cpu", torch.float32
 
-    # Choose pipeline based on whether an input image was supplied
+    # Choose pipeline based on whether an input image was supplied; cache by (path, type).
     image_b64 = body.get("image")
-    if image_b64:
-        log.info("CogVideoX: loading I2V pipeline from %s", model_path)
-        pipe = CogVideoXImageToVideoPipeline.from_pretrained(model_path, torch_dtype=dtype)
-    else:
-        log.info("CogVideoX: loading T2V pipeline from %s", model_path)
-        pipe = CogVideoXPipeline.from_pretrained(model_path, torch_dtype=dtype)
+    is_i2v = bool(image_b64)
+    cache_key = (model_path, is_i2v)
 
-    pipe = pipe.to(device)
+    if cache_key not in _cogvideox_pipes:
+        if is_i2v:
+            log.info("CogVideoX: loading I2V pipeline from %s", model_path)
+            pipe = CogVideoXImageToVideoPipeline.from_pretrained(model_path, torch_dtype=dtype)
+        else:
+            log.info("CogVideoX: loading T2V pipeline from %s", model_path)
+            pipe = CogVideoXPipeline.from_pretrained(model_path, torch_dtype=dtype)
+        _cogvideox_pipes[cache_key] = pipe.to(device)
+        log.info("CogVideoX: pipeline loaded and cached (%s)", cache_key)
+    else:
+        log.info("CogVideoX: using cached pipeline (%s)", cache_key)
+
+    pipe = _cogvideox_pipes[cache_key]
 
     # Optional LoRA
     lora_path = body.get("lora_path")
