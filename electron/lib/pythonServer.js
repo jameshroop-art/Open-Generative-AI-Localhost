@@ -20,6 +20,9 @@ const http = require('http');
 // ─── Config ───────────────────────────────────────────────────────────────────
 const PYTHON_PORT = parseInt(process.env.PYTHON_SERVER_PORT || '7861', 10);
 const SERVER_SCRIPT = path.join(__dirname, '../../python/server.py');
+const REQUIREMENTS = path.join(__dirname, '../../python/requirements.txt');
+// Project-level pip config: points pip at the local wheel directory.
+const PIP_INI = path.join(__dirname, '../../python/pip.ini');
 
 // ─── State ────────────────────────────────────────────────────────────────────
 let pythonProcess = null;
@@ -49,6 +52,61 @@ function findPython() {
             });
         };
         tryNext();
+    });
+}
+
+/**
+ * Build the pip env block — inherits process.env and overlays:
+ *   PIP_CONFIG_FILE  → project pip.ini (sets find-links + prefer-binary)
+ *   PIP_FIND_LINKS   → WHEELS_DIR / PIP_FIND_LINKS env override
+ *   PIP_NO_INDEX     → set to '1' when WHEELS_NO_INDEX is truthy
+ */
+function buildPipEnv() {
+    const wheelsDir = process.env.WHEELS_DIR || process.env.PIP_FIND_LINKS || '';
+    const env = {
+        ...process.env,
+        PIP_CONFIG_FILE: PIP_INI,
+    };
+    if (wheelsDir) {
+        env.PIP_FIND_LINKS = wheelsDir;
+    }
+    if (process.env.WHEELS_NO_INDEX) {
+        env.PIP_NO_INDEX = '1';
+    }
+    return env;
+}
+
+/**
+ * Run `pip install -r requirements.txt` using the local wheel directory.
+ * Non-fatal — a warning is logged if it fails so the sidecar can still
+ * attempt to start with whatever packages are already installed.
+ */
+function installDeps(python) {
+    return new Promise((resolve) => {
+        const args = ['-m', 'pip', 'install', '-r', REQUIREMENTS];
+        const proc = spawn(python, args, {
+            env: buildPipEnv(),
+            stdio: ['ignore', 'pipe', 'pipe'],
+        });
+
+        proc.stdout.on('data', (d) =>
+            console.log('[python-deps]', d.toString().trimEnd()),
+        );
+        proc.stderr.on('data', (d) =>
+            console.warn('[python-deps]', d.toString().trimEnd()),
+        );
+        proc.on('close', (code) => {
+            if (code !== 0) {
+                console.warn(`[python-deps] pip install exited with code ${code} — continuing anyway`);
+            } else {
+                console.log('[python-deps] requirements installed');
+            }
+            resolve(); // always resolve so startup is not blocked
+        });
+        proc.on('error', (err) => {
+            console.warn('[python-deps] pip install failed:', err.message);
+            resolve();
+        });
     });
 }
 
@@ -100,6 +158,10 @@ async function startServer() {
         return { ok: false, error: lastError };
     }
 
+    // Install / update Python dependencies from local wheels before starting.
+    console.log('[python-server] installing dependencies (wheels: ' + (process.env.WHEELS_DIR || process.env.PIP_FIND_LINKS || 'PyPI') + ')');
+    await installDeps(python);
+
     serverStatus = 'starting';
     lastError = null;
 
@@ -107,9 +169,13 @@ async function startServer() {
     // without needing a separate configuration step.  All vars derive from
     // MODELS_ROOT (set in .env.local) if the individual overrides are absent.
     const modelsRoot = process.env.MODELS_ROOT || '';
+    const wheelsDir = process.env.WHEELS_DIR || process.env.PIP_FIND_LINKS || '';
     const env = {
         ...process.env,
         PYTHON_SERVER_PORT: String(PYTHON_PORT),
+        // Always point subprocesses at the project pip config
+        PIP_CONFIG_FILE: PIP_INI,
+        ...(wheelsDir && { PIP_FIND_LINKS: wheelsDir }),
         ...(modelsRoot && {
             MODELS_ROOT: modelsRoot,
             ESRGAN_MODELS_DIR:     process.env.ESRGAN_MODELS_DIR     || path.join(modelsRoot, 'esrgan_models'),
