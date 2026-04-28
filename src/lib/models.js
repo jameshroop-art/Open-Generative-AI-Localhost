@@ -2557,6 +2557,30 @@ export const t2vModels = [
       "duration": { "title": "Duration", "name": "duration", "type": "int", "description": "The duration of the generated video in seconds", "default": 5 },
       "resolution": { "enum": ["480p", "720p", "1080p"], "title": "Resolution", "name": "resolution", "type": "string", "description": "The resolution of the generated video.", "default": "720p" }
     }
+  },
+  {
+    "id": "local-cogvideox-2b",
+    "name": "CogVideoX 2B (Local)",
+    "local": true,
+    "localEndpoint": "/api/cogvideox",
+    "localModelId": "cogvideox-2b",
+    "inputs": {
+      "prompt": { "type": "string", "title": "Prompt", "name": "prompt", "description": "Text prompt describing the video." },
+      "steps": { "title": "Steps", "name": "steps", "type": "int", "description": "Number of inference steps.", "default": 50, "minValue": 10, "maxValue": 100, "step": 5 },
+      "guidance_scale": { "title": "Guidance Scale", "name": "guidance_scale", "type": "float", "description": "Classifier-free guidance scale.", "default": 6.0, "minValue": 1.0, "maxValue": 20.0 }
+    }
+  },
+  {
+    "id": "local-cogvideox-5b",
+    "name": "CogVideoX 5B (Local)",
+    "local": true,
+    "localEndpoint": "/api/cogvideox",
+    "localModelId": "cogvideox-5b",
+    "inputs": {
+      "prompt": { "type": "string", "title": "Prompt", "name": "prompt", "description": "Text prompt describing the video." },
+      "steps": { "title": "Steps", "name": "steps", "type": "int", "description": "Number of inference steps.", "default": 50, "minValue": 10, "maxValue": 100, "step": 5 },
+      "guidance_scale": { "title": "Guidance Scale", "name": "guidance_scale", "type": "float", "description": "Classifier-free guidance scale.", "default": 6.0, "minValue": 1.0, "maxValue": 20.0 }
+    }
   }
 ];
 
@@ -8018,6 +8042,32 @@ export const i2vModels = [
         "enum": ["high", "basic"],
         "default": "basic"
       }
+    }
+  },
+  {
+    "id": "local-cogvideox-2b-i2v",
+    "name": "CogVideoX 2B I2V (Local)",
+    "local": true,
+    "localEndpoint": "/api/cogvideox",
+    "localModelId": "cogvideox-2b",
+    "imageField": "image",
+    "inputs": {
+      "prompt": { "type": "string", "title": "Prompt", "name": "prompt", "description": "Text prompt describing the video." },
+      "steps": { "title": "Steps", "name": "steps", "type": "int", "description": "Number of inference steps.", "default": 50, "minValue": 10, "maxValue": 100, "step": 5 },
+      "guidance_scale": { "title": "Guidance Scale", "name": "guidance_scale", "type": "float", "description": "Classifier-free guidance scale.", "default": 6.0, "minValue": 1.0, "maxValue": 20.0 }
+    }
+  },
+  {
+    "id": "local-cogvideox-5b-i2v",
+    "name": "CogVideoX 5B I2V (Local)",
+    "local": true,
+    "localEndpoint": "/api/cogvideox",
+    "localModelId": "cogvideox-5b",
+    "imageField": "image",
+    "inputs": {
+      "prompt": { "type": "string", "title": "Prompt", "name": "prompt", "description": "Text prompt describing the video." },
+      "steps": { "title": "Steps", "name": "steps", "type": "int", "description": "Number of inference steps.", "default": 50, "minValue": 10, "maxValue": 100, "step": 5 },
+      "guidance_scale": { "title": "Guidance Scale", "name": "guidance_scale", "type": "float", "description": "Classifier-free guidance scale.", "default": 6.0, "minValue": 1.0, "maxValue": 20.0 }
     }
   }
 ];

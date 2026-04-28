@@ -14,13 +14,14 @@ export async function generateMetadata({ params }) {
   };
 }
 
-const BASE_URL = 'https://api.muapi.ai';
+// Server-side fetches use the local proxy routes — no direct external calls.
+const LOCAL_BASE = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
 
 async function fetchAgentDetails(agentId, apiKey) {
   if (!apiKey) return null;
   try {
     const res = await fetch(
-      `${BASE_URL}/agents/by-slug/${agentId}`,
+      `${LOCAL_BASE}/api/agents/by-slug/${agentId}`,
       {
         cache: "no-store",
         headers: { "x-api-key": apiKey },
@@ -30,7 +31,7 @@ async function fetchAgentDetails(agentId, apiKey) {
     
     if (agentId.length > 20) {
       const resId = await fetch(
-        `${BASE_URL}/agents/${agentId}`,
+        `${LOCAL_BASE}/api/agents/${agentId}`,
         {
           cache: "no-store",
           headers: { "x-api-key": apiKey },
@@ -49,7 +50,7 @@ async function fetchHistory(agentId, conversationId, apiKey) {
   try {
     // Try by slug first
     const res = await fetch(
-      `${BASE_URL}/agents/by-slug/${agentId}/${conversationId}`,
+      `${LOCAL_BASE}/api/agents/by-slug/${agentId}/${conversationId}`,
       {
         cache: "no-store",
         headers: { "x-api-key": apiKey },
@@ -60,7 +61,7 @@ async function fetchHistory(agentId, conversationId, apiKey) {
     // Fallback to direct agent ID if needed
     if (agentId.length > 20) {
       const resId = await fetch(
-        `${BASE_URL}/agents/${agentId}/${conversationId}`,
+        `${LOCAL_BASE}/api/agents/${agentId}/${conversationId}`,
         {
           cache: "no-store",
           headers: { "x-api-key": apiKey },
@@ -77,7 +78,7 @@ async function fetchHistory(agentId, conversationId, apiKey) {
 async function fetchUserData(apiKey) {
   if (!apiKey) return null;
   try {
-    const res = await fetch(`${BASE_URL}/api/v1/account/balance`, {
+    const res = await fetch(`${LOCAL_BASE}/api/api/v1/account/balance`, {
       cache: "no-store",
       headers: { "x-api-key": apiKey },
     });

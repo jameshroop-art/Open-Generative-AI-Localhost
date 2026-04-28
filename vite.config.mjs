@@ -8,8 +8,11 @@ export default defineConfig({
     ],
     server: {
         proxy: {
+            // Route /api/* through the local Next.js server (localhost:3000)
+            // so all outbound API traffic goes through the Next.js proxy routes
+            // rather than hitting api.muapi.ai directly from the browser.
             '/api': {
-                target: 'https://api.muapi.ai',
+                target: 'http://localhost:3000',
                 changeOrigin: true,
                 secure: false
             }

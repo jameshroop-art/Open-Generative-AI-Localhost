@@ -3,7 +3,6 @@ import AgentChatClient from "./AgentChatClient";
 
 /**
  * Server component — fetches agentDetails from the /api/agents proxy
- * (which forwards to https://api.muapi.ai/agents/by-slug/{id})
  * using the muapi_key cookie for auth, then renders the client chat component.
  *
  * URL: /agents/[agent_id]   (new chat — no conversation ID yet)
@@ -15,7 +14,8 @@ export async function generateMetadata({ params }) {
   };
 }
 
-const BASE_URL = 'https://api.muapi.ai';
+// Server-side fetches use the local proxy routes — no direct external calls.
+const LOCAL_BASE = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
 
 async function fetchAgentDetails(agentId, apiKey) {
   if (!apiKey) return null;
@@ -24,7 +24,7 @@ async function fetchAgentDetails(agentId, apiKey) {
   try {
     console.log(`[AgentPage] Fetching agent by slug: ${agentId}`);
     const res = await fetch(
-      `${BASE_URL}/agents/by-slug/${agentId}`,
+      `${LOCAL_BASE}/api/agents/by-slug/${agentId}`,
       {
         cache: "no-store",
         headers: { "x-api-key": apiKey },
@@ -36,7 +36,7 @@ async function fetchAgentDetails(agentId, apiKey) {
     if (agentId.length > 20) {
       console.log(`[AgentPage] Fetch by slug failed, trying by ID: ${agentId}`);
       const resId = await fetch(
-        `${BASE_URL}/agents/${agentId}`,
+        `${LOCAL_BASE}/api/agents/${agentId}`,
         {
           cache: "no-store",
           headers: { "x-api-key": apiKey },
@@ -56,7 +56,7 @@ async function fetchAgentDetails(agentId, apiKey) {
 async function fetchUserData(apiKey) {
   if (!apiKey) return null;
   try {
-    const res = await fetch(`${BASE_URL}/api/v1/account/balance`, {
+    const res = await fetch(`${LOCAL_BASE}/api/api/v1/account/balance`, {
       cache: "no-store",
       headers: { "x-api-key": apiKey },
     });

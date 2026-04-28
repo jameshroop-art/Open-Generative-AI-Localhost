@@ -2,8 +2,8 @@ import { getModelById, getVideoModelById, getI2IModelById, getI2VModelById, getV
 
 export class MuapiClient {
     constructor() {
-        // Ideally user provides this in settings
-        this.baseUrl = import.meta.env.DEV ? '' : 'https://api.muapi.ai';
+        // Always use relative paths so all traffic routes through the local proxy.
+        this.baseUrl = '';
     }
 
     getKey() {
@@ -63,6 +63,15 @@ export class MuapiClient {
         // Optional params if supported by model
         if (params.seed && params.seed !== -1) {
             finalPayload.seed = params.seed;
+        }
+
+        // LoRA (cloud: Civitai ID string or array; local: absolute path passed through)
+        if (params.lora_models) {
+            finalPayload.lora_models = params.lora_models;
+        } else if (params.lora) {
+            // Convert a single filename/path into a Civitai-style entry if it looks like one,
+            // otherwise pass it verbatim so server-side logic can handle it.
+            finalPayload.lora_models = [{ id: params.lora, weight: params.loraWeight ?? 1.0 }];
         }
 
         console.log('[Muapi] Requesting:', url);
@@ -169,9 +178,14 @@ export class MuapiClient {
     }
 
     async generateVideo(params) {
-        const key = this.getKey();
-
         const modelInfo = getVideoModelById(params.model);
+
+        // Local CogVideoX models bypass the remote API entirely.
+        if (modelInfo?.local) {
+            return this._generateLocalCogVideoX(params, modelInfo);
+        }
+
+        const key = this.getKey();
         const endpoint = modelInfo?.endpoint || params.model;
         const url = `${this.baseUrl}/api/v1/${endpoint}`;
 
@@ -185,6 +199,13 @@ export class MuapiClient {
         if (params.quality) finalPayload.quality = params.quality;
         if (params.mode) finalPayload.mode = params.mode;
         if (params.image_url) finalPayload.image_url = params.image_url;
+
+        // LoRA for video models (motion LoRAs)
+        if (params.lora_models) {
+            finalPayload.lora_models = params.lora_models;
+        } else if (params.lora) {
+            finalPayload.lora_models = [{ id: params.lora, weight: params.loraWeight ?? 1.0 }];
+        }
 
         console.log('[Muapi] Video Request:', url);
         console.log('[Muapi] Video Payload:', finalPayload);
@@ -262,6 +283,13 @@ export class MuapiClient {
         if (params.resolution) finalPayload.resolution = params.resolution;
         if (params.quality) finalPayload.quality = params.quality;
 
+        // LoRA for I2I
+        if (params.lora_models) {
+            finalPayload.lora_models = params.lora_models;
+        } else if (params.lora) {
+            finalPayload.lora_models = [{ id: params.lora, weight: params.loraWeight ?? 1.0 }];
+        }
+
         console.log('[Muapi] I2I Request:', url);
         console.log('[Muapi] I2I Payload:', finalPayload);
 
@@ -307,8 +335,14 @@ export class MuapiClient {
      * @param {string} [params.quality]
      */
     async generateI2V(params) {
-        const key = this.getKey();
         const modelInfo = getI2VModelById(params.model);
+
+        // Local CogVideoX I2V models bypass the remote API entirely.
+        if (modelInfo?.local) {
+            return this._generateLocalCogVideoX(params, modelInfo);
+        }
+
+        const key = this.getKey();
         const endpoint = modelInfo?.endpoint || params.model;
         const url = `${this.baseUrl}/api/v1/${endpoint}`;
 
@@ -332,6 +366,13 @@ export class MuapiClient {
         if (params.quality) finalPayload.quality = params.quality;
         if (params.mode) finalPayload.mode = params.mode;
         if (params.name) finalPayload.name = params.name;
+
+        // LoRA for I2V (motion LoRAs)
+        if (params.lora_models) {
+            finalPayload.lora_models = params.lora_models;
+        } else if (params.lora) {
+            finalPayload.lora_models = [{ id: params.lora, weight: params.loraWeight ?? 1.0 }];
+        }
 
         console.log('[Muapi] I2V Request:', url);
         console.log('[Muapi] I2V Payload:', finalPayload);
@@ -364,6 +405,67 @@ export class MuapiClient {
             console.error('Muapi I2V Error:', error);
             throw error;
         }
+    }
+
+    /**
+     * Runs a local CogVideoX T2V or I2V generation via the Python sidecar.
+     * Returns { url: 'data:video/mp4;base64,...' } so callers can treat it
+     * like any other video result.
+     * @private
+     */
+    async _generateLocalCogVideoX(params, modelInfo) {
+        const localEndpoint = modelInfo.localEndpoint || '/api/cogvideox';
+        const payload = {
+            model_id: modelInfo.localModelId,
+            prompt: params.prompt || '',
+            steps: params.steps ?? 50,
+            guidance_scale: params.guidance_scale ?? 6.0,
+        };
+
+        if (params.seed != null && params.seed !== -1) payload.seed = params.seed;
+
+        // Image input for I2V — convert remote/data URL to base64 if needed
+        if (params.image_url) {
+            if (params.image_url.startsWith('data:')) {
+                // Already base64 — strip the data URI prefix
+                payload.image = params.image_url.split(',')[1] ?? params.image_url;
+            } else {
+                // Fetch the remote image and convert to base64
+                try {
+                    const imgRes = await fetch(params.image_url);
+                    const buf = await imgRes.arrayBuffer();
+                    payload.image = btoa(String.fromCharCode(...new Uint8Array(buf)));
+                } catch {
+                    payload.image = params.image_url; // pass through as-is
+                }
+            }
+        }
+
+        // LoRA: use absolute path from the lora picker
+        if (params.lora) {
+            payload.lora_path = params.lora;
+            payload.lora_weight = params.loraWeight ?? 1.0;
+        }
+
+        console.log('[Muapi] Local CogVideoX request:', localEndpoint, payload.model_id);
+
+        const response = await fetch(localEndpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`Local CogVideoX failed: ${response.status} - ${errText.slice(0, 200)}`);
+        }
+
+        const data = await response.json();
+        if (data.error) throw new Error(`Local CogVideoX error: ${data.error}`);
+        if (!data.video) throw new Error('No video returned from local CogVideoX');
+
+        const videoDataUrl = `data:video/mp4;base64,${data.video}`;
+        return { url: videoDataUrl };
     }
 
     /**

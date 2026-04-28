@@ -1,10 +1,15 @@
 import { getModelById, getVideoModelById, getI2IModelById, getI2VModelById, getV2VModelById, getLipSyncModelById } from './models.js';
 
-const BASE_URL = 'https://api.muapi.ai';
+// All requests route through local Next.js proxy routes — no direct external calls.
+// Using /api as the base means:
+//   /api/api/v1/...   → app/api/api/v1 proxy → muapi.ai/api/v1/...
+//   /api/workflow/... → app/api/workflow  proxy → muapi.ai/workflow/...
+//   /api/agents/...   → app/api/agents   proxy → muapi.ai/agents/...
+const BASE_URL = '/api';
 const PROXY_WF_BASE = '/api/workflow';
 
 async function pollForResult(requestId, key, maxAttempts = 900, interval = 2000) {
-    const pollUrl = `${BASE_URL}/api/v1/predictions/${requestId}/result`;
+    const pollUrl = `/api/api/v1/predictions/${requestId}/result`;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         await new Promise(resolve => setTimeout(resolve, interval));
         try {
@@ -63,6 +68,9 @@ export async function generateImage(apiKey, params) {
         payload.image_url = null;
     }
     if (params.seed && params.seed !== -1) payload.seed = params.seed;
+    // LoRA
+    if (params.lora_models) payload.lora_models = params.lora_models;
+    else if (params.lora) payload.lora_models = [{ id: params.lora, weight: params.loraWeight ?? 1.0 }];
     return submitAndPoll(endpoint, payload, apiKey, params.onRequestId, 60);
 }
 
@@ -80,6 +88,9 @@ export async function generateI2I(apiKey, params) {
     if (params.aspect_ratio) payload.aspect_ratio = params.aspect_ratio;
     if (params.resolution) payload.resolution = params.resolution;
     if (params.quality) payload.quality = params.quality;
+    // LoRA
+    if (params.lora_models) payload.lora_models = params.lora_models;
+    else if (params.lora) payload.lora_models = [{ id: params.lora, weight: params.loraWeight ?? 1.0 }];
     return submitAndPoll(endpoint, payload, apiKey, params.onRequestId, 60);
 }
 
@@ -94,6 +105,9 @@ export async function generateVideo(apiKey, params) {
     if (params.quality) payload.quality = params.quality;
     if (params.mode) payload.mode = params.mode;
     if (params.image_url) payload.image_url = params.image_url;
+    // LoRA / motion LoRA
+    if (params.lora_models) payload.lora_models = params.lora_models;
+    else if (params.lora) payload.lora_models = [{ id: params.lora, weight: params.loraWeight ?? 1.0 }];
     return submitAndPoll(endpoint, payload, apiKey, params.onRequestId, 900);
 }
 
@@ -112,6 +126,9 @@ export async function generateI2V(apiKey, params) {
     if (params.resolution) payload.resolution = params.resolution;
     if (params.quality) payload.quality = params.quality;
     if (params.mode) payload.mode = params.mode;
+    // LoRA / motion LoRA
+    if (params.lora_models) payload.lora_models = params.lora_models;
+    else if (params.lora) payload.lora_models = [{ id: params.lora, weight: params.loraWeight ?? 1.0 }];
     return submitAndPoll(endpoint, payload, apiKey, params.onRequestId, 900);
 }
 
@@ -233,7 +250,7 @@ export async function getPublishedWorkflows(apiKey) {
     return await response.json();
 };
 
-// Agents — uses direct URL → https://api.muapi.ai/agents/...
+// Agents — routes through the local /api/agents proxy
 export async function getTemplateAgents(apiKey) {
     const response = await fetch(`${BASE_URL}/agents/templates/agents`, {
         headers: {

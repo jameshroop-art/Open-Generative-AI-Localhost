@@ -10,6 +10,7 @@ import { ENHANCE_TAGS, QUICK_PROMPTS } from '../lib/promptUtils.js';
 import { AuthModal } from './AuthModal.js';
 import { createUploadPicker } from './UploadPicker.js';
 import { savePendingJob, removePendingJob, getPendingJobs } from '../lib/pendingJobs.js';
+import { processor, STATUS } from '../lib/requestProcessor.js';
 
 function createInlineInstructions(type) {
     const el = document.createElement('div');
@@ -462,16 +463,23 @@ export function ImageStudio() {
             <!-- LoRA Model Selection -->
             <div class="flex flex-col gap-2">
                 <label class="text-xs font-bold text-secondary uppercase tracking-wider">LoRA Model (Optional)</label>
-                <input type="text" id="lora-input" 
-                    placeholder="e.g., civitai:1642876@1864626"
-                    class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm placeholder:text-muted focus:outline-none focus:border-primary/50 transition-colors">
+                <div class="relative">
+                    <select id="lora-select"
+                        class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-primary/50 transition-colors appearance-none cursor-pointer">
+                        <option value="">— None —</option>
+                    </select>
+                    <div class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-white/40">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg>
+                    </div>
+                </div>
                 <div class="flex items-center gap-2 mt-1">
                     <label class="text-xs font-bold text-secondary">LoRA Weight:</label>
-                    <input type="number" id="lora-weight-input" 
+                    <input type="number" id="lora-weight-input"
                         value="1.0" min="0" max="4" step="0.1"
                         class="w-20 bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-white text-sm focus:outline-none focus:border-primary/50 transition-colors">
                 </div>
-                <p class="text-xs text-muted">Enter a LoRA model ID from Civitai (format: civitai:id@version)</p>
+                <p id="lora-path-hint" class="text-xs text-muted hidden"></p>
+                <p class="text-xs text-muted">Select a local .safetensors LoRA from the <code>lora/</code> directory</p>
             </div>
         </div>
     `;
@@ -668,14 +676,48 @@ export function ImageStudio() {
         };
     }
     
-    // LoRA input
-    const loraInput = advancedPanel.querySelector('#lora-input');
-    if (loraInput) {
-        loraInput.oninput = (e) => {
-            selectedLora = e.target.value.trim();
+    // LoRA select
+    const loraSelect = advancedPanel.querySelector('#lora-select');
+    const loraPathHint = advancedPanel.querySelector('#lora-path-hint');
+    if (loraSelect) {
+        // Populate options from local LoRA catalog
+        localAI.listLoras().then(({ loras = [] }) => {
+            if (!loras.length) return;
+            // Group by subfolder label
+            const groups = {};
+            loras.forEach(l => {
+                const g = l.label || l.subfolder || 'General';
+                if (!groups[g]) groups[g] = [];
+                groups[g].push(l);
+            });
+            Object.entries(groups).forEach(([groupLabel, items]) => {
+                const optgroup = document.createElement('optgroup');
+                optgroup.label = groupLabel;
+                items.forEach(l => {
+                    const opt = document.createElement('option');
+                    opt.value = l.relative;   // relative path from LORA_ROOT
+                    opt.textContent = l.name;
+                    opt.dataset.absPath = l.absPath || '';
+                    optgroup.appendChild(opt);
+                });
+                loraSelect.appendChild(optgroup);
+            });
+        }).catch(() => { /* silently ignore if lora dir absent */ });
+
+        loraSelect.onchange = (e) => {
+            selectedLora = e.target.value;
+            if (loraPathHint) {
+                const selected = loraSelect.options[loraSelect.selectedIndex];
+                if (selectedLora && selected?.dataset.absPath) {
+                    loraPathHint.textContent = selected.dataset.absPath;
+                    loraPathHint.classList.remove('hidden');
+                } else {
+                    loraPathHint.classList.add('hidden');
+                }
+            }
         };
     }
-    
+
     // LoRA weight input
     const loraWeightInput = advancedPanel.querySelector('#lora-weight-input');
     if (loraWeightInput) {
@@ -1186,7 +1228,7 @@ export function ImageStudio() {
 
             let hadError = false;
             try {
-                const res = await localAI.generate({
+                const localGenParams = {
                     model: selectedLocalModel,
                     prompt,
                     negative_prompt: negativePrompt || undefined,
@@ -1194,7 +1236,9 @@ export function ImageStudio() {
                     steps: steps,
                     guidance_scale: guidanceScale,
                     seed,
-                });
+                };
+                if (selectedLora) { localGenParams.lora = selectedLora; localGenParams.loraWeight = loraWeight; }
+                const res = await localAI.generate(localGenParams);
                 unsub();
                 progressWrap.classList.replace('flex', 'hidden');
                 progressWrap.classList.add('hidden');
@@ -1261,6 +1305,7 @@ export function ImageStudio() {
                 if (prompt) genParams.prompt = prompt;
                 const qualityField = getCurrentQualityField(selectedModel);
                 if (qualityField && qualityLabel) genParams[qualityField] = qualityLabel;
+                if (selectedLora) { genParams.lora = selectedLora; genParams.loraWeight = loraWeight; }
                 res = await muapi.generateI2I(genParams);
             } else {
                 const genParams = {
@@ -1274,6 +1319,7 @@ export function ImageStudio() {
                 };
                 const qualityField = getCurrentQualityField(selectedModel);
                 if (qualityField && qualityLabel) genParams[qualityField] = qualityLabel;
+                if (selectedLora) { genParams.lora = selectedLora; genParams.loraWeight = loraWeight; }
                 res = await muapi.generateImage(genParams);
             }
 

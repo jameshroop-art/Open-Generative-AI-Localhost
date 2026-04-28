@@ -1,0 +1,25 @@
+# Core server dependencies — always required
+flask>=3.0
+flask-cors>=4.0
+Pillow>=10.0
+numpy>=1.24
+
+# ── Optional: install the packages for the features you want to use ───────────
+#
+# ESRGAN super-resolution  (POST /esrgan/upscale)
+#   basicsr>=1.4.2
+#   realesrgan>=0.3.0
+#
+# GFPGAN face restoration  (POST /gfpgan/restore)
+#   gfpgan>=1.3.8
+#
+# InsightFace face swap    (POST /insightface/swap)
+#   insightface>=0.7.3
+#   onnxruntime>=1.16.0      # CPU only
+#   # or onnxruntime-gpu for NVIDIA GPU acceleration
+#
+# HuggingFace Diffusers    (POST /diffusers/generate)
+#   torch>=2.0.0
+#   diffusers>=0.27.0
+#   transformers>=4.40.0
+#   accelerate>=0.27.0

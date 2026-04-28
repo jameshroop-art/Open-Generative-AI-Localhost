@@ -9,8 +9,16 @@ const os = require('os');
 // ─── Paths ────────────────────────────────────────────────────────────────────
 const DATA_DIR = path.join(app.getPath('userData'), 'local-ai');
 const BIN_DIR = path.join(DATA_DIR, 'bin');
-const MODELS_DIR = path.join(DATA_DIR, 'models');
+// MODELS_DIR: env override (e.g. from .env.local) → userData default
+const MODELS_DIR = process.env.MODELS_DIR || path.join(DATA_DIR, 'models');
 const TMP_DIR = path.join(DATA_DIR, 'tmp');
+
+// LoRA directory: env override → repo-root lora/ (dev) → app resources lora/ (packaged)
+const LORA_DIR = process.env.LORA_DIR || (() => {
+    const devPath = path.join(__dirname, '../../lora');
+    if (fs.existsSync(devPath)) return devPath;
+    return path.join(process.resourcesPath || __dirname, 'lora');
+})();
 
 for (const dir of [BIN_DIR, MODELS_DIR, TMP_DIR]) {
     fs.mkdirSync(dir, { recursive: true });
@@ -322,6 +330,55 @@ async function deleteModel(modelId) {
     return { ok: true };
 }
 
+// ─── LoRA management ──────────────────────────────────────────────────────────
+
+// Map subdirectory names to a human-readable category.
+const LORA_SUBFOLDER_LABELS = {
+    'flux'                      : 'Flux',
+    'ill'                       : 'Illustrious / SDXL',
+    'motion_loras'              : 'Motion / Video (WAN)',
+    'cogvideox-loras'           : 'CogVideoX',
+    'civitai_celeb-lora-archive': 'Civitai Celeb Archive',
+    'archive'                   : 'Archive',
+    ''                          : 'General (SD1 / SDXL)',
+};
+
+function scanLoraDir(dir, loraRoot, results = []) {
+    if (!fs.existsSync(dir)) return results;
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); }
+    catch { return results; }
+
+    for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+            const relative = path.relative(loraRoot, fullPath);
+            if (!relative.includes(path.sep)) {
+                scanLoraDir(fullPath, loraRoot, results);
+            }
+        } else if (entry.name.endsWith('.safetensors')) {
+            const relative = path.relative(loraRoot, fullPath);
+            const parts = relative.split(path.sep);
+            const subfolder = parts.length > 1 ? parts[0] : '';
+            results.push({
+                name     : entry.name.replace(/\.safetensors$/, '').replace(/^lora_/, ''),
+                filename : entry.name,
+                relative,
+                subfolder,
+                label    : LORA_SUBFOLDER_LABELS[subfolder] ?? subfolder,
+                absPath  : fullPath,
+            });
+        }
+    }
+    return results;
+}
+
+function listLoras() {
+    const loras = scanLoraDir(LORA_DIR, LORA_DIR);
+    loras.sort((a, b) => a.subfolder.localeCompare(b.subfolder) || a.name.localeCompare(b.name));
+    return { loras, loraDir: LORA_DIR };
+}
+
 // ─── Generation ───────────────────────────────────────────────────────────────
 function arToDimensions(ar, modelType) {
     const base = (modelType === 'sdxl' || modelType === 'z-image') ? 1024 : 512;
@@ -383,6 +440,32 @@ async function generate(params, mainWindow) {
 
     if (params.negative_prompt) {
         args.push('-n', params.negative_prompt);
+    }
+
+    // ── LoRA support ──────────────────────────────────────────────────────────
+    // params.lora: filename (e.g. "lora_feet.safetensors") or relative path
+    // params.loraWeight: multiplier, default 1.0
+    if (params.lora) {
+        // Resolve full path — the file may live in a subdirectory of LORA_DIR
+        let loraAbsPath = params.lora;
+        if (!path.isAbsolute(loraAbsPath)) {
+            loraAbsPath = path.join(LORA_DIR, params.lora);
+        }
+        if (fs.existsSync(loraAbsPath)) {
+            const loraDir = path.dirname(loraAbsPath);
+            const loraName = path.basename(loraAbsPath, '.safetensors');
+            const weight = typeof params.loraWeight === 'number' ? params.loraWeight : 1.0;
+            // sd.cpp: --lora-model-dir points to the dir; LoRA is activated via
+            // <lora:name:weight> embedded in the prompt.
+            args.push('--lora-model-dir', loraDir);
+            // Append LoRA trigger to the prompt argument already set above.
+            const promptIdx = args.indexOf('-p');
+            if (promptIdx !== -1) {
+                args[promptIdx + 1] = `${args[promptIdx + 1]} <lora:${loraName}:${weight}>`;
+            }
+        } else {
+            console.warn(`[sd-cli] LoRA file not found, skipping: ${loraAbsPath}`);
+        }
     }
 
     if (model.type === 'z-image') {
@@ -471,6 +554,7 @@ function register() {
     ipcMain.handle('local-ai:binary-status', () => getBinaryStatus());
     ipcMain.handle('local-ai:download-binary', () => downloadBinary(getMainWindow()));
     ipcMain.handle('local-ai:list-models', () => listModels());
+    ipcMain.handle('local-ai:list-loras', () => listLoras());
     ipcMain.handle('local-ai:download-model', (_, modelId) => downloadModel(modelId, getMainWindow()));
     ipcMain.handle('local-ai:download-auxiliary', (_, auxKey) => downloadAuxiliary(auxKey, getMainWindow()));
     ipcMain.handle('local-ai:delete-model', (_, modelId) => deleteModel(modelId));
