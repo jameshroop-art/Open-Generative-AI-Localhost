@@ -23,6 +23,9 @@ const SERVER_SCRIPT = path.join(__dirname, '../../python/server.py');
 const REQUIREMENTS = path.join(__dirname, '../../python/requirements.txt');
 // Project-level pip config: points pip at the local wheel directory.
 const PIP_INI = path.join(__dirname, '../../python/pip.ini');
+// Virtual environment created by install_windows.bat (Windows) or setup_python.sh (Unix).
+const VENV_PYTHON_WIN = path.join(__dirname, '../../python/.venv/Scripts/python.exe');
+const VENV_PYTHON_UNIX = path.join(__dirname, '../../python/.venv/bin/python3');
 
 // ─── State ────────────────────────────────────────────────────────────────────
 let pythonProcess = null;
@@ -33,15 +36,23 @@ let lastError = null;
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
- * Resolve the Python executable name on the current platform.
- * Tries python3 first, then python.  Resolves with the executable name or
- * null if Python is not found.
+ * Resolve the Python executable to use, preferring the project venv when it
+ * exists (created by install_windows.bat or setup_python.sh).  Falls back to
+ * the system Python3 / Python on PATH.
+ *
+ * Resolves with the full path or command name, or null if Python is not found.
  */
 function findPython() {
     return new Promise((resolve) => {
-        const candidates = process.platform === 'win32'
+        // Prefer the venv Python so packages installed by the installer are
+        // always available, regardless of what is on the system PATH.
+        const venvPython = process.platform === 'win32' ? VENV_PYTHON_WIN : VENV_PYTHON_UNIX;
+
+        const systemCandidates = process.platform === 'win32'
             ? ['python', 'python3']
             : ['python3', 'python'];
+
+        const candidates = [venvPython, ...systemCandidates];
 
         let idx = 0;
         const tryNext = () => {

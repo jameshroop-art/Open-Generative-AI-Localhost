@@ -31,6 +31,9 @@ release/
 .next/
 out/
 
+# Python virtual environment
+python/.venv/
+
 # Misc
 *.pem
 .env
