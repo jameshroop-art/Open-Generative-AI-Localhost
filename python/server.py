@@ -39,6 +39,21 @@ CORS(app, resources={r'/*': {'origins': [
     'http://127.0.0.1:5173',
 ]}})
 
+# ── Model root resolution ─────────────────────────────────────────────────────
+# MODELS_ROOT is a single base directory that all model sub-paths derive from.
+# Set it (e.g. in .env.local) to point at your local models folder.
+# Individual sub-path overrides take precedence over MODELS_ROOT.
+_MODELS_ROOT = os.environ.get("MODELS_ROOT", "")
+_REPO_ROOT = os.path.join(os.path.dirname(__file__), "..")
+
+
+def _models_path(*parts):
+    """Return a path relative to MODELS_ROOT, falling back to the repo root."""
+    if _MODELS_ROOT:
+        return os.path.join(_MODELS_ROOT, *parts)
+    return os.path.join(_REPO_ROOT, *parts)
+
+
 # ── Lazy-loaded model caches ──────────────────────────────────────────────────
 _esrgan_models = {}   # model_name → RealESRGANer instance
 _gfpgan_model = None
@@ -93,7 +108,7 @@ def esrgan_upscale():
 
     models_dir = os.environ.get(
         "ESRGAN_MODELS_DIR",
-        os.path.join(os.path.dirname(__file__), "..", "esrgan_models"),
+        _models_path("esrgan_models"),
     )
     model_path = os.path.join(models_dir, f"{model_name}.pth")
 
@@ -153,7 +168,7 @@ def gfpgan_restore():
 
     weights_dir = os.environ.get(
         "GFPGAN_WEIGHTS_DIR",
-        os.path.join(os.path.dirname(__file__), "..", "gfpgan"),
+        _models_path("gfpgan"),
     )
     model_path = os.path.join(weights_dir, "GFPGANv1.4.pth")
 
@@ -216,7 +231,7 @@ def insightface_swap():
 
     models_dir = os.environ.get(
         "INSIGHTFACE_MODELS_DIR",
-        os.path.join(os.path.dirname(__file__), "..", "extensions", "insightface", "models"),
+        _models_path("extensions", "insightface", "models"),
     )
 
     face_app = FaceAnalysis(
@@ -364,10 +379,12 @@ def cogvideox_generate():
 
     model_path = body.get("model_path")
     if not model_path:
-        # Try the environment default, then fall back to CogVideoX/ next to repo root
+        # Try the environment default (COGVIDEOX_MODEL_PATH or COGVIDEOX_DIR),
+        # then fall back to MODELS_ROOT/CogVideoX/CogVideoX-5b.
+        cogvideox_dir = os.environ.get("COGVIDEOX_DIR", _models_path("CogVideoX"))
         model_path = os.environ.get(
             "COGVIDEOX_MODEL_PATH",
-            os.path.join(os.path.dirname(__file__), "..", "CogVideoX", "CogVideoX-5b"),
+            os.path.join(cogvideox_dir, "CogVideoX-5b"),
         )
     if not os.path.isdir(model_path):
         return jsonify({"error": f"model_path must point to a local CogVideoX directory: {model_path}"}), 400

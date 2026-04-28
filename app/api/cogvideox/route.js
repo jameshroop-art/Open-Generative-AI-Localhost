@@ -2,7 +2,9 @@ import { NextResponse } from 'next/server';
 import path from 'path';
 
 // Base directory for CogVideoX model folders.
+// Resolved from: COGVIDEOX_DIR → MODELS_ROOT/CogVideoX → cwd/CogVideoX
 const COGVIDEOX_ROOT = process.env.COGVIDEOX_DIR
+    || (process.env.MODELS_ROOT ? path.join(process.env.MODELS_ROOT, 'CogVideoX') : null)
     || path.join(process.cwd(), 'CogVideoX');
 
 // Python sidecar base URL (always localhost-only).

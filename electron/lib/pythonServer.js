@@ -103,7 +103,22 @@ async function startServer() {
     serverStatus = 'starting';
     lastError = null;
 
-    const env = { ...process.env, PYTHON_SERVER_PORT: String(PYTHON_PORT) };
+    // Forward all model-path env vars to the sidecar so it can locate models
+    // without needing a separate configuration step.  All vars derive from
+    // MODELS_ROOT (set in .env.local) if the individual overrides are absent.
+    const modelsRoot = process.env.MODELS_ROOT || '';
+    const env = {
+        ...process.env,
+        PYTHON_SERVER_PORT: String(PYTHON_PORT),
+        ...(modelsRoot && {
+            MODELS_ROOT: modelsRoot,
+            ESRGAN_MODELS_DIR:     process.env.ESRGAN_MODELS_DIR     || path.join(modelsRoot, 'esrgan_models'),
+            GFPGAN_WEIGHTS_DIR:    process.env.GFPGAN_WEIGHTS_DIR    || path.join(modelsRoot, 'gfpgan'),
+            INSIGHTFACE_MODELS_DIR:process.env.INSIGHTFACE_MODELS_DIR|| path.join(modelsRoot, 'extensions', 'insightface', 'models'),
+            COGVIDEOX_DIR:         process.env.COGVIDEOX_DIR         || path.join(modelsRoot, 'CogVideoX'),
+            COGVIDEOX_MODEL_PATH:  process.env.COGVIDEOX_MODEL_PATH  || path.join(modelsRoot, 'CogVideoX', 'CogVideoX-5b'),
+        }),
+    };
     pythonProcess = spawn(python, [SERVER_SCRIPT], {
         env,
         stdio: ['ignore', 'pipe', 'pipe'],

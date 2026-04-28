@@ -9,7 +9,8 @@ const os = require('os');
 // ─── Paths ────────────────────────────────────────────────────────────────────
 const DATA_DIR = path.join(app.getPath('userData'), 'local-ai');
 const BIN_DIR = path.join(DATA_DIR, 'bin');
-const MODELS_DIR = path.join(DATA_DIR, 'models');
+// MODELS_DIR: env override (e.g. from .env.local) → userData default
+const MODELS_DIR = process.env.MODELS_DIR || path.join(DATA_DIR, 'models');
 const TMP_DIR = path.join(DATA_DIR, 'tmp');
 
 // LoRA directory: env override → repo-root lora/ (dev) → app resources lora/ (packaged)
